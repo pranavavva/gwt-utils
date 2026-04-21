@@ -198,3 +198,66 @@ gwtcs() {
     _gwt_switch_or_attach "${created[1]}"
   fi
 }
+
+# --- Public: gwtdel ----------------------------------------------------------
+
+gwtdel() {
+  _gwt_require_repo || return 1
+
+  local root="$(_gwt_main_root)"
+  local cwd_wt="$(git rev-parse --show-toplevel 2>/dev/null)"
+
+  # Parse worktree list porcelain into lines of "<branch>\t<wt_path>".
+  # Records are blank-line separated; skip the primary, skip cwd, skip
+  # detached-HEAD entries (no branch).
+  # NB: name this variable `wt_path`, NOT `path` — `path` is a zsh-tied array
+  # variable that mirrors $PATH. Declaring `local path=""` and assigning to it
+  # silently clobbers the environment's PATH. (Same applies to `cdpath`,
+  # `fpath`, `manpath`, `module_path`.)
+  local porcelain="$(git -C "$root" worktree list --porcelain)"
+  local -a lines=()
+  local wt_path="" branch="" line=""
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) wt_path="${line#worktree }" ;;
+      "branch "*)   branch="${line#branch }"; branch="${branch#refs/heads/}" ;;
+      "")
+        if [[ -n "$wt_path" && -n "$branch" && "$wt_path" != "$root" && "$wt_path" != "$cwd_wt" ]]; then
+          lines+=("${branch}"$'\t'"${wt_path}")
+        fi
+        wt_path=""; branch=""
+        ;;
+    esac
+  done <<< "$porcelain"
+  # Final record (porcelain may omit trailing blank line).
+  if [[ -n "$wt_path" && -n "$branch" && "$wt_path" != "$root" && "$wt_path" != "$cwd_wt" ]]; then
+    lines+=("${branch}"$'\t'"${wt_path}")
+  fi
+
+  if (( ${#lines} == 0 )); then
+    print "gwt-utils: no deletable worktrees"
+    return 0
+  fi
+
+  # Present tab-separated lines; fzf's default delimiter handles them.
+  local picks=""
+  picks="$(print -l -- $lines | fzf-tmux -p 80%,60% --multi \
+    --delimiter=$'\t' --with-nth=1 \
+    --prompt 'delete> ' \
+    --header 'TAB: multi-select  ENTER: confirm')" || return 0
+  [[ -z "$picks" ]] && return 0
+
+  local b="" wt_path="" ans=""
+  while IFS=$'\t' read -r b wt_path; do
+    [[ -z "$b" || -z "$wt_path" ]] && continue
+    tmux kill-session -t "=$(_gwt_session_name "$b")" 2>/dev/null
+    git -C "$root" worktree remove --force "$wt_path" || continue
+    ans="n"
+    vared -p "delete local branch '$b'? [y/N]: " ans
+    if [[ "$ans" == [yY]* ]]; then
+      git -C "$root" branch -D "$b"
+    fi
+  done <<< "$picks"
+
+  git -C "$root" worktree prune
+}
