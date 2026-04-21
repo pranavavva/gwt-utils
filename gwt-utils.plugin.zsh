@@ -72,3 +72,49 @@ _gwt_ensure_session() {
   tmux has-session -t "=$session" 2>/dev/null && return 0
   tmux new-session -d -s "$session" -c "$cwd"
 }
+
+# --- Public: gwtnew ----------------------------------------------------------
+
+gwtnew() {
+  _gwt_require_repo || return 1
+
+  local branch=""
+  vared -p "new branch name: " branch
+  if [[ -z "$branch" || "$branch" == *[[:space:]]* ]]; then
+    print -u2 "gwt-utils: branch name must be non-empty with no whitespace"
+    return 1
+  fi
+
+  if _gwt_branch_exists_anywhere "$branch"; then
+    print -u2 "gwt-utils: branch '$branch' already exists (local, remote, or tracking). Try gwtcs."
+    return 1
+  fi
+
+  local wt; wt="$(_gwt_worktree_path "$branch")"
+  if [[ -e "$wt" ]]; then
+    print -u2 "gwt-utils: worktree path already exists: $wt"
+    return 1
+  fi
+
+  local base="main"
+  vared -p "base branch: " base
+
+  local root; root="$(_gwt_main_root)"
+  git -C "$root" fetch origin --quiet 2>/dev/null || true
+
+  local resolved=""
+  if git -C "$root" rev-parse --verify --quiet "$base" >/dev/null; then
+    resolved="$base"
+  elif git -C "$root" rev-parse --verify --quiet "origin/$base" >/dev/null; then
+    resolved="origin/$base"
+  else
+    print -u2 "gwt-utils: base '$base' not resolvable as local or origin/ ref"
+    return 1
+  fi
+
+  git -C "$root" worktree add -b "$branch" "$wt" "$resolved" || return 1
+
+  local session; session="$(_gwt_session_name "$branch")"
+  _gwt_ensure_session "$session" "$wt"
+  _gwt_switch_or_attach "$session"
+}
