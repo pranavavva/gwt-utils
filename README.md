@@ -7,11 +7,11 @@ Zsh functions that couple git worktrees with tmux sessions, packaged as an
 
 Adds three commands that extend OMZ's built-in `gwt*` git-worktree aliases:
 
-| Command | Purpose |
-| ------- | ------- |
-| `gwtnew` | Prompt for a new branch name + base, create worktree at `.worktrees/<branch>`, spawn a tmux session named `<repo>/<branch>`, switch your tmux client into it. |
+| Command  | Purpose                                                                                                                                                                          |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gwtnew` | Prompt for a new branch name + base, create worktree at `.worktrees/<branch>`, spawn a tmux session named `<repo>/<branch>`, switch your tmux client into it.                    |
 | `gwtcs`  | `fzf-tmux` multi-select picker over branches (local + `origin`) that don't yet have a worktree. Creates worktree + session for each pick. Auto-switches only when one is picked. |
-| `gwtdel` | `fzf-tmux` multi-select picker over worktrees (excluding the primary and your current cwd). Kills the tmux session, removes the worktree, optionally deletes the branch. |
+| `gwtdel` | `fzf-tmux` multi-select picker over worktrees (excluding the primary and your current cwd). Kills the tmux session, removes the worktree, optionally deletes the branch.         |
 
 ## Dependencies
 
@@ -29,7 +29,7 @@ break your shell.
 Clone into your oh-my-zsh custom plugins directory:
 
 ```sh
-git clone https://github.com/pranavraja/gwt-utils \
+git clone https://github.com/pranavavva/gwt-utils \
   ${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/gwt-utils
 ```
 
@@ -123,7 +123,7 @@ gwtdel
 ## Development
 
 ```sh
-git clone https://github.com/pranavraja/gwt-utils ~/src/gwt-utils
+git clone https://github.com/pranavavva/gwt-utils ~/src/gwt-utils
 cd ~/src/gwt-utils
 # iterate on gwt-utils.plugin.zsh, then:
 source ~/src/gwt-utils/gwt-utils.plugin.zsh   # add to .zshrc for reload-free dev
