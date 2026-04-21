@@ -50,7 +50,7 @@ _gwt_branch_exists_anywhere() {
   git show-ref --verify --quiet "refs/heads/$branch"          && return 0
   git show-ref --verify --quiet "refs/remotes/origin/$branch" && return 0
   # ls-remote as last resort — network call, only runs if earlier checks missed.
-  local root; root="$(_gwt_main_root)"
+  local root="$(_gwt_main_root)"
   git -C "$root" ls-remote --exit-code --heads origin "$branch" \
     >/dev/null 2>&1 && return 0
   return 1
@@ -90,7 +90,7 @@ gwtnew() {
     return 1
   fi
 
-  local wt; wt="$(_gwt_worktree_path "$branch")"
+  local wt="$(_gwt_worktree_path "$branch")"
   if [[ -e "$wt" ]]; then
     print -u2 "gwt-utils: worktree path already exists: $wt"
     return 1
@@ -99,7 +99,7 @@ gwtnew() {
   local base="main"
   vared -p "base branch: " base
 
-  local root; root="$(_gwt_main_root)"
+  local root="$(_gwt_main_root)"
   git -C "$root" fetch origin --quiet 2>/dev/null || true
 
   local resolved=""
@@ -114,7 +114,87 @@ gwtnew() {
 
   git -C "$root" worktree add -b "$branch" "$wt" "$resolved" || return 1
 
-  local session; session="$(_gwt_session_name "$branch")"
+  local session="$(_gwt_session_name "$branch")"
   _gwt_ensure_session "$session" "$wt"
   _gwt_switch_or_attach "$session"
+}
+
+# --- Public: gwtcs (create session from existing branch) ---------------------
+
+gwtcs() {
+  _gwt_require_repo || return 1
+
+  local root="$(_gwt_main_root)"
+  git -C "$root" fetch origin --quiet 2>/dev/null || true
+
+  # Collect ref sets. `(f)` splits on newlines into an array.
+  local -a locals remotes checked_out
+  locals=(${(f)"$(git -C "$root" for-each-ref \
+    --format='%(refname:short)' refs/heads/)"})
+  remotes=(${(f)"$(git -C "$root" for-each-ref \
+    --format='%(refname)' refs/remotes/origin/ \
+    | grep -v '/HEAD$' \
+    | sed 's|^refs/remotes/origin/||')"})
+  checked_out=(${(f)"$(git -C "$root" worktree list --porcelain \
+    | awk '/^branch /{sub("refs/heads/","",$2); print $2}')"})
+
+  # Tag membership maps.
+  local -A in_local in_remote excluded
+  local b
+  for b in $locals;      do in_local[$b]=1;  done
+  for b in $remotes;     do in_remote[$b]=1; done
+  for b in $checked_out; do excluded[$b]=1;  done
+
+  # Build picker lines: union of locals + remotes, minus checked_out, deduped.
+  local -a lines seen
+  local tag
+  for b in $locals $remotes; do
+    (( ${seen[(Ie)$b]} )) && continue
+    seen+=($b)
+    [[ -n "${excluded[$b]}" ]] && continue
+    if [[ -n "${in_local[$b]}" && -n "${in_remote[$b]}" ]]; then
+      tag="[local,origin]"
+    elif [[ -n "${in_local[$b]}" ]]; then
+      tag="[local]"
+    else
+      tag="[origin]"
+    fi
+    lines+=("$(printf '%-40s %s' "$b" "$tag")")
+  done
+
+  if (( ${#lines} == 0 )); then
+    print "gwt-utils: no branches without worktrees"
+    return 0
+  fi
+
+  local picks=""
+  picks="$(print -l -- $lines | fzf-tmux -p 80%,60% --multi \
+    --prompt 'worktree> ' \
+    --header 'TAB: toggle  ENTER: confirm')" || return 0
+  [[ -z "$picks" ]] && return 0
+
+  # Strip padding+tag; `awk '{print $1}'` gives the branch name.
+  local -a picked
+  picked=(${(f)"$(print -r -- "$picks" | awk '{print $1}')"})
+
+  # Note: declare loop-local vars ONCE with explicit init. Using `local wt;`
+  # inside the loop would trigger zsh's `typeset`-display quirk on subsequent
+  # iterations (printing "wt=<prev value>" to stdout).
+  local wt="" session=""
+  local -a created=()
+  for b in $picked; do
+    if ! git -C "$root" show-ref --verify --quiet "refs/heads/$b"; then
+      git -C "$root" branch --track "$b" "origin/$b" || continue
+    fi
+    wt="$(_gwt_worktree_path "$b")"
+    git -C "$root" worktree add "$wt" "$b" || continue
+    session="$(_gwt_session_name "$b")"
+    _gwt_ensure_session "$session" "$wt"
+    created+=("$session")
+    print "created: $session"
+  done
+
+  if (( ${#created} == 1 )); then
+    _gwt_switch_or_attach "${created[1]}"
+  fi
 }
